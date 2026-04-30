@@ -1,8 +1,5 @@
 import static java.lang.System.exit;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -12,7 +9,9 @@ import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.Arrays;
+import java.util.Queue;
 
 /**
  * 
@@ -51,6 +50,8 @@ public class Sender {
     private double SRTT;
     /** Smoothed deviation time */
     private double SDEV;
+    /** Queue for datagram packets at sws ~ not yet implemented code needs refactoring to use*/
+    private Queue<DatagramPacket> q = new ArrayDeque<>();
 
     /**
      * Constructor
@@ -124,6 +125,8 @@ public class Sender {
         } catch (IOException e) {
             System.err.println("Unable to send packet");
         }
+        // for new connection "set the sequence number to 0"
+        this.SEQ = 0;
         return;
         
     }
@@ -132,6 +135,12 @@ public class Sender {
 
     }
 
+    /**
+     * Reads file into a byte array. Breaks file into chunks
+     * and sends them in separate packets of size mtu until
+     * all are sent. Incrementes global SEQ as 
+     * each packet is sent.
+     */
     private void sendDataPacket() {
 
         // entire file
@@ -164,7 +173,7 @@ public class Sender {
             }
     
             position += mtu;
-            SEQ += chunk.length;
+            this.SEQ += chunk.length;
         }
         if (data.length - position > 0) {
             chunk = Arrays.copyOfRange(data, position, data.length);
@@ -175,7 +184,7 @@ public class Sender {
             } catch (IOException e) {
                 System.err.println("Unable to send packet");
             }
-            SEQ += chunk.length;
+            this.SEQ += chunk.length;
         }
 
 
@@ -194,7 +203,7 @@ public class Sender {
      * @param buf - packet bytes
      * @return checksum
      */
-    private static short calculateChecksum(ByteBuffer buf) {
+    public static short calculateChecksum(ByteBuffer buf) {
 
         buf.rewind();
         int sum = 0;
@@ -237,17 +246,23 @@ public class Sender {
         buf.putShort((short)0);                     // checksum - must set again after calculation
         buf.put(data);
 
-        // write checksum 22B into packet
+        // write checksum 22 bytes into packet
         checksum = calculateChecksum(buf);
         buf.putShort(22, checksum);
 
-        // inc SEQ and ACK
         return buf;
     }
 
     /**
+     * Called after packets sent to wait for ACK packet
+     */
+    public void receiver() {
+
+    }
+
+    /**
      * Follows algorithm in Assignment Spec.
-     * Updates timeouttime T0.
+     * Updates timeouttime (T0).
      * @param T - packet timestamp
      */
     private void timeoutComputation(long T) {

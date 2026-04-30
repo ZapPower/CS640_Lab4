@@ -4,14 +4,22 @@ import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.net.Socket;
 import java.net.SocketException;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.Queue;
 
 /**
  * 
  */
 public class Receiver {
+
+    private static final int synFlag = 1 << 29;
+    private static final int ackFlag = 1 << 30;
+    private static final int finFlag = 1 << 31;
 
     /** port number at which the client will run */
     private int clientPort;
@@ -23,14 +31,20 @@ public class Receiver {
     private String filename;
     /** Sequence Number of last sent byte */
     private int SEQ;
-    /** Acknoledgement Number */
+    /** ACK is next byte expected  */
     private int ACK;
     /** Used to send out and receive packets */
     private DatagramSocket socket;
+    
     /** IP addr of remote peer (sender) */
     private InetAddress IPAddr;
     /** port at which remote sender is running */
     private int remotePort;
+
+    /** Queue for datagram packets at sws ~ not yet implemented code needs refactoring to use*/
+    private Queue<DatagramPacket> q = new ArrayDeque<>();
+
+
     public Receiver(int clientPort, int mtu, int windowSize, String filename) {
         
         // same port range as Lab_1?
@@ -64,34 +78,107 @@ public class Receiver {
             System.err.println("Error: Failed connection to local port: " + clientPort);
         }
 
-        IPAddr = null;
-        remotePort = -1;
         // handles packet arrival
         receiver();
     }
 
 
+    /**
+     * Triggered by a SYN flag, establishes a conenction to the remote sender
+     * by recording their IP + port. Also parses the initial basic packet
+     * and sends an acknowledgement.
+     * @param packet
+     */
     private void establishConnection(DatagramPacket packet) {
+        
+        // clear checksum field
+        ByteBuffer buf = ByteBuffer.wrap(packet.getData(), 0, packet.getLength());
+        short checksum = buf.getShort(22);
+        buf.putShort(22, (short)0);
 
+        // check checksum value
+        short recalculatedhecksum = Sender.calculateChecksum(buf);
+        if (recalculatedhecksum != checksum) {
+            System.err.println("Checksum field did not match. Droping packet");
+            return;
+        }
+        // set remote IP and Port
+        this.IPAddr = packet.getAddress();
+        this.remotePort = packet.getPort();
+        this.SEQ = buf.getInt(0);
+
+        long timestamp = buf.getLong(8);
+        sendACK(timestamp);
+        return;
     }
 
     private void terminateConnection() {
 
     }
 
+    /**
+     * Parses and handles packet data. Checks for duplication, correct checksum,
+     * and flags in case termination is required.
+     * @param packet
+     */
     private void parsePacket(DatagramPacket packet) {
 
-        packet.
+        ByteBuffer packetBuffer = ByteBuffer.wrap(packet.getData(), 0, packet.getLength());
+        int packetSEQ = packetBuffer.getInt(0);
+        long timestamp = packetBuffer.getLong(8);
+        int length = packetBuffer.getInt(16) & 0x1FFFFFFF;
+        short checksum = packetBuffer.getShort(22);
 
+        // check sequence number for dupliacte
+        // if (this.SEQ < packetSEQ) {}
+        // check checksum
+
+        // check flags to call terminate connection?
+
+        // send acknowledgement
+        sendACK(timestamp);
     }
 
+    /**
+     * Builds a basic acknowledgment packet.
+     * Only ACK flag is set and packet holds no data hence
+     * ACK flag is not & to a value (length 0).
+     * @param timestamp is copied over from incoming packet
+     */
+    private void sendACK(long timestamp) {
+
+        short checksum = 0;
+        ByteBuffer ackBuffer = ByteBuffer.allocate(24);
+
+        ackBuffer.putInt(0);          // don't need to send back a SEQ#
+        ackBuffer.putInt(this.ACK);         // next expected byte
+        ackBuffer.putLong(timestamp);
+        ackBuffer.putInt(ackFlag);          // length 0
+        ackBuffer.putShort((short)0);
+        ackBuffer.putShort((short)0);
+
+        checksum = Sender.calculateChecksum(ackBuffer);
+        ackBuffer.putShort(22, checksum);
+    }
+
+    /**
+     * Runs indefinetely to handle incoming packets. Upon reception, SYN is checked
+     * to determine if packet should establish a connection, otherwise generic packet
+     * parser is called.
+     */
     private void receiver() {
-        DatagramPacket packet = null;
+        DatagramPacket packet = new DatagramPacket(new byte[2048], 2048);
+        ByteBuffer packetBuffer;
+        int flags;
 
         while(true) {
             try {
                 socket.receive(packet);
-                if (IPAddr == null || remotePort == -1) {
+                // resize packet
+                packetBuffer = ByteBuffer.wrap(packet.getData());
+                flags = packetBuffer.getInt(16) >>> 29;
+                // initialize socket
+                if ((flags & synFlag) != 0) {
                     establishConnection(packet);
                 }
                 else {
