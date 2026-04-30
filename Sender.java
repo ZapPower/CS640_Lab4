@@ -18,9 +18,9 @@ import java.util.Queue;
  */
 public class Sender {
 
-    private static final int synFlag = 1 << 29;
-    private static final int ackFlag = 1 << 30;
-    private static final int finFlag = 1 << 31;
+    private static final int SYN = 1 << 29;
+    private static final int ACK = 1 << 30;
+    private static final int FIN = 1 << 31;
 
     /** port number at which the client will run */
     private int clientPort;
@@ -38,8 +38,8 @@ public class Sender {
     private DatagramSocket socket;
     /** Sequence Number of last sent byte */
     private int SEQ;
-    /** Acknoledgement Number */
-    private int ACK;
+    // /** Acknoledgement Number */
+    // private int ACK;
     /** Timeout time*/
     private double T0;
     /** Estimated round trip time */
@@ -107,7 +107,7 @@ public class Sender {
         }
 
         SEQ = 0;
-        ACK = 0;
+        // ACK = 0;
         T0 = java.util.concurrent.TimeUnit.SECONDS.toNanos(5); // initialized to 5 seconds
     }
 
@@ -117,7 +117,7 @@ public class Sender {
     private void establishConnection() {
         
         byte[] data = new byte[0];
-        ByteBuffer buf = buildPacket(data, synFlag);
+        ByteBuffer buf = buildPacket(data, SYN);
 
         DatagramPacket packet = new DatagramPacket(buf.array(), buf.array().length, IPAddr, remotePort);
         try {
@@ -164,7 +164,7 @@ public class Sender {
         // while there are bytes left, break into units of mtu and send
         while (data.length - position >= mtu) {
             chunk = Arrays.copyOfRange(data, position, position + mtu);
-            ByteBuffer buf = buildPacket(chunk, ackFlag);
+            ByteBuffer buf = buildPacket(chunk, ACK);
             // build DatagramPacket and send through local socket
             try {
                 socket.send(new DatagramPacket(buf.array(), buf.array().length, IPAddr, remotePort));
@@ -177,7 +177,7 @@ public class Sender {
         }
         if (data.length - position > 0) {
             chunk = Arrays.copyOfRange(data, position, data.length);
-            ByteBuffer buf = buildPacket(chunk, ackFlag);
+            ByteBuffer buf = buildPacket(chunk, ACK);
             // build DatagramPacket and send through local socket
             try {
                 socket.send(new DatagramPacket(buf.array(), buf.array().length, IPAddr, remotePort));
@@ -230,7 +230,7 @@ public class Sender {
      * Builds a binary packet according to assignment specifications.
      * 4B SEQ, 4B ACK, 8B timestamp, 29b length + 3 flag bits, 2B 0s, 2B checksum, n bytes data
      * @param data      - file to send in byte form
-     * @param ackFlag   - flags to set in binary packet
+     * @param ACK   - flags to set in binary packet
      * @return buf      - assembled binary packet
      */
     private ByteBuffer buildPacket(byte[] data, int flags) { 
@@ -239,7 +239,7 @@ public class Sender {
 
         ByteBuffer buf = ByteBuffer.allocate(4 + 4 + 8 + 4 + 2 + 2 + length);
         buf.putInt(SEQ);                            // SEQ #
-        buf.putInt(ACK);                            // ACK #
+        buf.putInt(0);                        // ACK # ~ receiver does not send data
         buf.putLong(System.nanoTime());             // timestamp
         buf.putInt((length & 0x1FFFFFFF) | flags);  // length + bit flags
         buf.putShort((short)0);                     // padding

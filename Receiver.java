@@ -4,7 +4,7 @@ import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
-import java.net.Socket;
+
 import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
@@ -137,7 +137,7 @@ public class Receiver {
         int length = packetBuffer.getInt(16) & 0x1FFFFFFF;
 
         // discard duplicate packet
-        if (packetSEQ < ackNumber) {
+        if (ackNumber < packetSEQ) {
             return;
         }
         // check checksum, drop packet if mismatch
