@@ -1,11 +1,9 @@
-import static java.lang.System.exit;
-
 import java.io.IOException;
+import static java.lang.System.exit;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
-
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;

@@ -1,4 +1,5 @@
 all:
-	javac *.java
+	javac -d src src/*.java
+
 clean:
-	rm *.class
+	rm -f src/*.class

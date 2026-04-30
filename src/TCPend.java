@@ -1,4 +1,6 @@
+import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Objects;
@@ -17,13 +19,13 @@ public class TCPend {
         try {
             for (int i = 0; i < args.length; i++) {
                 switch (args[i]) {
-                    case "-p" -> { PORT = handleIntInput(args[i+1]); i++; }
-                    case "-s" -> { REMOTE_IP = args[i+1]; i++; }
-                    case "-a" -> { REMOTE_PORT = handleIntInput(args[i+1]); i++; }
-                    case "-f" -> { FILE_NAME = args[i+1]; i++; }
-                    case "-m" -> { MTU = handleIntInput(args[i+1]); i++; }
-                    case "-c" -> { WIN_SIZE = handleIntInput(args[i+1]); i++; }
-                    default -> {
+                    case "-p": { PORT = handleIntInput(args[i+1]); i++; break; }
+                    case "-s": { REMOTE_IP = args[i+1]; i++; break; }
+                    case "-a": { REMOTE_PORT = handleIntInput(args[i+1]); i++; break; }
+                    case "-f": { FILE_NAME = args[i+1]; i++; break; }
+                    case "-m": { MTU = handleIntInput(args[i+1]); i++; break; }
+                    case "-c": { WIN_SIZE = handleIntInput(args[i+1]); i++; break; }
+                    default: {
                         System.out.println("Invalid argument '" + args[i] + "'");
                         return;
                     }
@@ -72,11 +74,43 @@ public class TCPend {
             System.out.println("Unable to resolve address '" + REMOTE_IP + "'");
             return;
         }
-        Sender s = new Sender(PORT, ip, REMOTE_PORT, FILE_NAME, MTU, WIN_SIZE);
+
+        DatagramSocket socket;
+        try {
+            socket = new DatagramSocket(PORT);
+        } catch (SocketException e) {
+            System.out.println("Unable to open socket on port " + PORT + ": " + e.getMessage());
+            return;
+        }
+
+        TCPSender sender = new TCPSender(socket, ip, REMOTE_PORT, FILE_NAME, MTU, WIN_SIZE);
+        try {
+            sender.send();
+        } catch (Exception e) {
+            System.out.println("Sender error: " + e);
+            e.printStackTrace();
+        } finally {
+            sender.close();
+        }
     }
 
     private static void startReceiver() {
-        Receiver r = new Receiver(PORT, MTU, WIN_SIZE, FILE_NAME);
+        DatagramSocket socket;
+        try {
+            socket = new DatagramSocket(PORT);
+        } catch (SocketException e) {
+            System.out.println("Unable to open socket on port " + PORT + ": " + e.getMessage());
+            return;
+        }
+
+        TCPReceiver receiver = new TCPReceiver(socket, FILE_NAME, MTU, WIN_SIZE);
+        try {
+            receiver.receive();
+        } catch (Exception e) {
+            System.out.println("Receiver error: " + e);
+        } finally {
+            receiver.close();
+        }
     }
 
     private static int handleIntInput(String s) {
