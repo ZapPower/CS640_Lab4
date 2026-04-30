@@ -582,7 +582,7 @@ public class TCPSender {
                     // Send final ACK
                     TCPSegment ack = new TCPSegment(
                         this.next + 1,            // seqNum = FIN consumed one seq number
-                        finAck.seqNum + 1,      // ackNum = receiver's FIN seq + 1
+                        finAck.seqNum + 2,      // ackNum = receiver's FIN seq + 1
                         finAck.timestamp,       // echo back timestamp
                         false,                  // synFlag
                         false,                  // finFlag

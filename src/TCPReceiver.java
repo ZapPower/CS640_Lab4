@@ -87,8 +87,6 @@ public class TCPReceiver {
                 handleData(seg, fos);
             }
         }
-
-        printStats();
     }
 
     /**
@@ -97,12 +95,10 @@ public class TCPReceiver {
      * @throws Exception Any IO error that could occur
      */
     private void receiveSYN() throws Exception {
-        System.out.println("Waiting for SYN...");
         while (true) {
             byte[] buf = new byte[mtu + 24];
             DatagramPacket pkt = new DatagramPacket(buf, buf.length);
             this.socket.receive(pkt);
-            System.out.println("DATAGRAM RECEIVED");
 
             TCPSegment syn = new TCPSegment(
                 Arrays.copyOf(pkt.getData(), pkt.getLength())
@@ -111,7 +107,6 @@ public class TCPReceiver {
             // Validate checksum
             if (!syn.verifyChecksum()) {
                 this.totalBadChecksums++;
-                System.out.println("BAD CHECKSUM");
                 continue;
             }
 
