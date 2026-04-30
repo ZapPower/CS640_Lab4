@@ -50,6 +50,13 @@ public class TCPSender {
     private int totalBadChecksums;       
     private int totalOutOfSequence;
 
+    // SYNC
+    private volatile boolean finReceived = false;
+    private volatile boolean ackListenerRunning = true;
+    private TCPSegment receivedFinAck = null;
+    private Thread ackListener;
+    private int lastReceivedSeq = 0;
+
     /**
      * Creates a new TCPSender object
      * 
@@ -112,23 +119,33 @@ public class TCPSender {
 
         sendSYN();
 
-        Thread ackListener = new Thread(() -> {
-            while (!this.socket.isClosed()) {
+        ackListener = new Thread(() -> {
+            while (!socket.isClosed() && ackListenerRunning) {
                 try {
-                    byte[] buf = new byte[this.mtu + 24];
+                    byte[] buf = new byte[mtu + 24];
                     DatagramPacket pkt = new DatagramPacket(buf, buf.length);
-                    this.socket.receive(pkt);
+                    socket.receive(pkt);
 
-                    TCPSegment ack = new TCPSegment(
+                    TCPSegment seg = new TCPSegment(
                         Arrays.copyOf(pkt.getData(), pkt.getLength())
                     );
 
-                    handleACK(ack);
+                    // If it's a FIN-ACK, hand it off to sendFIN() and stop
+                    if (seg.finFlag) {
+                        synchronized (this) {
+                            receivedFinAck = seg;
+                            finReceived = true;
+                            notifyAll();  // wake up sendFIN() which may be waiting
+                        }
+                        return;
+                    }
+
+                    handleACK(seg);
+
                 } catch (SocketException e) {
-                    // Socket closed
                     break;
                 } catch (IOException e) {
-                    if (Thread.currentThread().isInterrupted()) break;
+                    if (!ackListenerRunning) break;
                     System.err.println("ACK listener error: " + e.getMessage());
                 }
             }
@@ -509,6 +526,7 @@ public class TCPSender {
             }
         } else {
             this.lastACK = ack.ackNum;
+            this.lastReceivedSeq = ack.seqNum;
             this.dupACKCount = 0;
         }
 
@@ -532,101 +550,114 @@ public class TCPSender {
      * @throws Exception Any IO error that could occur
      */
     private void sendFIN() throws Exception {
-        // Build FIN segment
+        // Stop the ACK listener cleanly before taking over the socket
+        ackListenerRunning = false;
+        ackListener.interrupt();
+
+        // Give the listener a moment to stop
+        try {
+            ackListener.join(1000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
         TCPSegment fin = new TCPSegment(
-            this.next,            // seqNum = next byte after all data
-            0,                  // ackNum = 0, we arent acknowledging data
+            this.next,
+            this.lastReceivedSeq + 1,
             System.nanoTime(),
-            false,              // synFlag
-            true,               // finFlag
-            true,               // ackFlag — must be set post handshake
-            null                // no data
+            false,
+            true,
+            true,
+            null
         );
         fin.computeChecksum();
 
         byte[] finBytes = fin.serialize();
-        DatagramPacket finPacket = new DatagramPacket(finBytes, finBytes.length, this.remoteIP, this.remotePort);
+        DatagramPacket finPacket = new DatagramPacket(finBytes, finBytes.length, remoteIP, remotePort);
 
-        // Use socket timeout for FIN handshake similar to SYN
-        this.socket.setSoTimeout(5000);
+        socket.setSoTimeout(5000);
         int attempts = 0;
 
         while (attempts < 16) {
             // Send FIN
-            this.socket.send(finPacket);
+            socket.send(finPacket);
             logSegment(SEGTYPE.SND, fin);
-            this.totalPacketsSent++;
+            totalPacketsSent++;
 
-            // Wait for FIN-ACK
+            // Wait for FIN-ACK — either handed off by listener or received directly
             try {
-                byte[] buf = new byte[this.mtu + 24];
-                DatagramPacket response = new DatagramPacket(buf, buf.length);
-                this.socket.receive(response);
-
-                TCPSegment finAck = new TCPSegment(
-                    Arrays.copyOf(response.getData(), response.getLength())
-                );
-
-                // Validate checksum
-                if (!finAck.verifyChecksum()) {
-                    this.totalBadChecksums++;
-                    attempts++;
-                    continue;
-                }
-
-                logSegment(SEGTYPE.RCV, finAck);
-
-                // Check it is a FIN-ACK
-                if (finAck.finFlag && finAck.ackFlag && finAck.ackNum == this.next + 1) {
-
-                    // Send final ACK
-                    TCPSegment ack = new TCPSegment(
-                        this.next + 1,            // seqNum = FIN consumed one seq number
-                        finAck.seqNum + 1,      // ackNum = receiver's FIN seq + 1
-                        finAck.timestamp,       // echo back timestamp
-                        false,                  // synFlag
-                        false,                  // finFlag
-                        true,                   // ackFlag
-                        null                    // no data
-                    );
-                    ack.computeChecksum();
-
-                    byte[] ackBytes = ack.serialize();
-                    DatagramPacket ackPacket = new DatagramPacket(ackBytes, ackBytes.length, this.remoteIP, this.remotePort);
-                    this.socket.send(ackPacket);
-                    logSegment(SEGTYPE.SND, ack);
-                    this.totalPacketsSent++;
-
-                    // wait before closing in case final ACK is lost
-                    // and receiver retransmits FIN-ACK
-                    this.socket.setSoTimeout((int)(2 * timeout / 1_000_000));
-                    try {
-                        byte[] waitBuf = new byte[this.mtu + 24];
-                        DatagramPacket waitPacket = new DatagramPacket(waitBuf, waitBuf.length);
-                        while (true) {
-                            this.socket.receive(waitPacket);
-                            TCPSegment retransmittedFin = new TCPSegment(
-                                Arrays.copyOf(waitPacket.getData(), waitPacket.getLength())
-                            );
-                            // Receiver retransmitted FIN-ACK, send ACK again
-                            if (retransmittedFin.finFlag) {
-                                this.socket.send(ackPacket);
-                                logSegment(SEGTYPE.SND, ack);
-                                this.totalPacketsSent++;
-                            }
-                        }
-                    } catch (SocketTimeoutException e) {
-                        // wait period expired, safe to close
+                synchronized (this) {
+                    // Check if listener already handed us a FIN-ACK
+                    if (!finReceived) {
+                        wait(5000);  // wait up to 5 seconds
                     }
 
-                    return;
-                }
+                    if (finReceived && receivedFinAck != null) {
+                        TCPSegment finAck = receivedFinAck;
 
-            } catch (SocketTimeoutException e) {
-                System.err.println("FIN-ACK timeout, retrying... attempt " + (attempts + 1));
-                attempts++;
-                this.totalRetransmissions++;
+                        if (!finAck.verifyChecksum()) {
+                            totalBadChecksums++;
+                            finReceived = false;
+                            receivedFinAck = null;
+                            attempts++;
+                            continue;
+                        }
+
+                        logSegment(SEGTYPE.RCV, finAck);
+
+                        if (finAck.finFlag && finAck.ackFlag && 
+                            finAck.ackNum == this.next + 1) {
+
+                            // Send final ACK
+                            TCPSegment ack = new TCPSegment(
+                                this.next + 1,
+                                finAck.seqNum + 1,
+                                finAck.timestamp,
+                                false,
+                                false,
+                                true,
+                                null
+                            );
+                            ack.computeChecksum();
+
+                            byte[] ackBytes = ack.serialize();
+                            DatagramPacket ackPacket = new DatagramPacket(
+                                ackBytes, ackBytes.length, remoteIP, remotePort
+                            );
+                            socket.send(ackPacket);
+                            logSegment(SEGTYPE.SND, ack);
+                            totalPacketsSent++;
+
+                            // TIME_WAIT
+                            socket.setSoTimeout((int)(2 * timeout / 1_000_000));
+                            try {
+                                byte[] waitBuf = new byte[mtu + 24];
+                                DatagramPacket waitPacket = new DatagramPacket(waitBuf, waitBuf.length);
+                                while (true) {
+                                    socket.receive(waitPacket);
+                                    TCPSegment retransmittedFin = new TCPSegment(
+                                        Arrays.copyOf(waitPacket.getData(), waitPacket.getLength())
+                                    );
+                                    if (retransmittedFin.finFlag) {
+                                        socket.send(ackPacket);
+                                        logSegment(SEGTYPE.SND, ack);
+                                        totalPacketsSent++;
+                                    }
+                                }
+                            } catch (SocketTimeoutException e) {
+                                // TIME_WAIT expired, safe to close
+                            }
+                            return;
+                        }
+                    }
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
+
+            attempts++;
+            totalRetransmissions++;
+            System.err.println("FIN-ACK timeout, retrying... attempt " + attempts);
         }
 
         throw new Exception("FIN failed after 16 attempts, aborting.");

@@ -102,7 +102,6 @@ public class TCPReceiver {
             byte[] buf = new byte[mtu + 24];
             DatagramPacket pkt = new DatagramPacket(buf, buf.length);
             this.socket.receive(pkt);
-            System.out.println("DATAGRAM RECEIVED");
 
             TCPSegment syn = new TCPSegment(
                 Arrays.copyOf(pkt.getData(), pkt.getLength())
@@ -111,7 +110,6 @@ public class TCPReceiver {
             // Validate checksum
             if (!syn.verifyChecksum()) {
                 this.totalBadChecksums++;
-                System.out.println("BAD CHECKSUM");
                 continue;
             }
 
