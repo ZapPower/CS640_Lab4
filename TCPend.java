@@ -1,3 +1,5 @@
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Objects;
 
@@ -54,9 +56,27 @@ public class TCPend {
             }
         }
 
-        // Retrieve file
-
         // Start Sender/Receiver
+        if (STATE.equals(State.SEND)) {
+            startSender();
+        } else {
+            startReceiver();
+        }
+    }
+
+    private static void startSender() {
+        InetAddress ip;
+        try {
+            ip = InetAddress.getByName(REMOTE_IP);
+        } catch (UnknownHostException e) {
+            System.out.println("Unable to resolve address '" + REMOTE_IP + "'");
+            return;
+        }
+        Sender s = new Sender(PORT, ip, REMOTE_PORT, FILE_NAME, MTU, WIN_SIZE);
+    }
+
+    private static void startReceiver() {
+        Receiver r = new Receiver(PORT, MTU, WIN_SIZE, FILE_NAME);
     }
 
     private static int handleIntInput(String s) {
