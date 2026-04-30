@@ -638,7 +638,7 @@ public class TCPSender {
     }
 
     private void printStats() {
-        System.out.printf("%d %d %d %d %d %d%n",
+        System.out.printf("%dMb %d %d %d %d %d%n",
             this.totalBytesTransferred,
             this.totalPacketsSent,
             this.totalOutOfSequence,

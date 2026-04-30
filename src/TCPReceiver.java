@@ -353,7 +353,7 @@ public class TCPReceiver {
     }
 
     private void printStats() {
-        System.out.printf("%d %d %d %d %d %d%n",
+        System.out.printf("%dMb %d %d %d %d %d%n",
             this.totalBytesReceived,
             this.totalPacketsReceived,
             this.totalOutOfSequence,
