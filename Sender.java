@@ -120,6 +120,7 @@ public class Sender {
      */
     private void establishConnection() {
         
+        // send initial SYN packet
         byte[] data = new byte[0];
         ByteBuffer buf = buildPacket(data, SYN);
 
@@ -128,24 +129,39 @@ public class Sender {
             socket.send(packet);
         } catch (IOException e) {
             System.err.println("Unable to send packet");
+            exit(1);
         }
         // for new connection "set the sequence number to 0"
         this.SEQ = 0;
 
 
-        // wait for acknowledgment
+        // wait for receiver's SYN+ACK packet
         try {
             socket.receive(packet);
         } catch(IOException e) {
             System.err.println("Error waiting for initiator acknowledgment");
         }
 
+        // parse packet, check flags, SEQ/ACK #s, and checksum
         buf = ByteBuffer.wrap(packet.getData());
-        if (buf.getInt(4) != 0) {System.err.println("Wrong acknowledment number");}
-        if (buf.get)
-
-        // send ACK for Receiver's connection-establishing packet
-
+        if (buf.getInt(0) != 0 || buf.getInt(4) != 0) {
+            System.err.println("Wrong acknowledment number");
+            exit(1);
+        }
+        if ((buf.getInt(16) & SYN & ACK) == 0) {
+            System.err.println("Unexpected flags");
+            exit(1);
+        }
+        short checksum = buf.getShort(22);
+        buf.putShort(22, (short)0);
+        short recalulatedChecksum = calculateChecksum(buf);
+        if (recalulatedChecksum != checksum) {
+            System.err.println("Checksum field did not match. Droping packet");
+            exit(1);
+        }
+        
+        // send final ACK to finalize connection
+        buf = buildPacket(new byte[0], ACK);
         return;
         
     }

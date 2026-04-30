@@ -95,13 +95,14 @@ public class Receiver {
 
 
     /**
-     * Triggered by a SYN flag, establishes a conenction to the remote sender
-     * by saving their IP + port. Also parses the initiator packet
-     * and sends an acknowledgement (with SYN and ACK flags set).
-     * @param packet
+     * Three-way handshake. Called by receiver() after packet with SYN
+     * comes in. Sends an SYN/ACK packet in response and waits for a final ACK.
+     * 
+     * Did not know how to handle error, so exits instead.
+     * @param packet w/ SYN flag, used to set remote port+IP and initiate connectino
      */
     private void establishConnection(DatagramPacket packet) {
-        
+        // skip flag checking (done in receiver())
         // clear checksum field
         ByteBuffer buf = ByteBuffer.wrap(packet.getData(), 0, packet.getLength());
         short checksum = buf.getShort(22);
@@ -111,17 +112,44 @@ public class Receiver {
         short recalculatedhecksum = Sender.calculateChecksum(buf);
         if (recalculatedhecksum != checksum) {
             System.err.println("Checksum field did not match. Droping packet");
-            return;
+            exit(1);
         }
         // set remote IP and Port
         this.IPAddr = packet.getAddress();
         this.remotePort = packet.getPort();
         this.ackNumber = 0;
 
-        // send acknowledgement for initiation packet
+        // send SYN + ACK packet
         long timestamp = buf.getLong(8);
         int flags = SYN & ACK;
         sendACK(timestamp, flags);
+
+        // wait for final ACK packet
+        try {
+            socket.receive(packet);
+        } catch (IOException e) {
+            System.err.println("Error ingesting ACK packet");
+            exit(1);
+        }
+        buf = ByteBuffer.wrap(packet.getData());
+
+        // check that ACK #, checksum, and flags are as expected
+        if (buf.getInt(4) != 0) {
+            System.err.println("Wrong acknowledgment number");
+            exit(1);
+        }
+        checksum = buf.getShort(22);
+        buf.putShort(22, (short)0);
+        recalculatedhecksum = Sender.calculateChecksum(buf);
+        if (recalculatedhecksum != checksum) {
+            System.err.println("Checksum field did not match. Droping packet");
+            exit(1);
+        }
+        if ((buf.getInt(16) & ACK) == 0) {
+            System.err.println("Expected ACK flag");
+            exit(1);
+        }
+        
 
         return;
     }
@@ -224,7 +252,7 @@ public class Receiver {
     }
 
     /**
-     * Runs indefinetely to handle incoming packets. Upon reception, SYN is checked
+     * Runs a loop to catch incoming packets. Upon reception, SYN is checked
      * to determine if packet should establish a connection, otherwise generic packet
      * parser is called.
      */
