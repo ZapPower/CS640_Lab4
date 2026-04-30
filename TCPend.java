@@ -1,123 +1,91 @@
-import java.util.ArrayList;
-import java.util.Objects;
+import java.net.*;
 
+/**
+ * 
+ */
 public class TCPend {
-    private static Integer PORT;
-    private static String REMOTE_IP;
-    private static Integer REMOTE_PORT;
-    private static String FILE_NAME;
-    private static Integer MTU;
-    private static Integer WIN_SIZE;
-    
-    private static State STATE;
-
     public static void main(String[] args) {
-        try {
-            for (int i = 0; i < args.length; i++) {
-                switch (args[i]) {
-                    case "-p" -> { PORT = handleIntInput(args[i+1]); i++; }
-                    case "-s" -> { REMOTE_IP = args[i+1]; i++; }
-                    case "-a" -> { REMOTE_PORT = handleIntInput(args[i+1]); i++; }
-                    case "-f" -> { FILE_NAME = args[i+1]; i++; }
-                    case "-m" -> { MTU = handleIntInput(args[i+1]); i++; }
-                    case "-c" -> { WIN_SIZE = handleIntInput(args[i+1]); i++; }
-                    default -> {
-                        System.out.println("Invalid argument '" + args[i] + "'");
-                        return;
-                    }
-                }
-            }
-        } catch (IndexOutOfBoundsException e) {
-            System.out.println("Argument not specified for given flag.");
-            return;
-        } catch (Exception e) {
-            System.out.println(e.getMessage());
+        System.out.println("hi");
+
+        if (args.length < 1) {
+            System.err.println("Error: missing or additional arguments");
             return;
         }
 
-        // Decide whether we are running in Sender mode or Receiver mode
-        if (Objects.nonNull(REMOTE_IP)) {
-            STATE = State.SEND;
-            try {
-                verifySenderAttributes();
-            } catch (Exception e) {
-                System.out.println(e.getMessage());
-                return;
-            }
-        } else {
-            STATE = State.RECV;
-            try {
-                verifyReceiverAttributes();
-            } catch (Exception e) {
-                System.out.println(e.getMessage());
-                return;
-            }
-        }
-
-        // Retrieve file
-
-        // Start Sender/Receiver
+        String flag = args[2];
+        if (flag.equals("-s"))
+            runSender(args);
+        else if (flag.equals("-m"))
+            runReceiver(args);
+        else
+            System.err.println("Second flag -s implies sender, while -m implies receiver.");
+        return;
     }
 
-    private static int handleIntInput(String s) {
-        int out;
+    /**
+     * 
+     * @param args
+     */
+    private static void runSender(String[] args) {
+
+        if (args.length != 12) {
+            System.err.println("Error: missing or additional arguments");
+            return;
+        }
+        int clientPort;     // port client runs on
+        InetAddress IPAddr; // IP of remote peer
+        int remotePort;     // port of remote peer
+        String filename;    // file to be sent
+        int mtu;            // max transmission unit (in bytes)
+        int windowSize;     // sliding window size (in segments)
+        
+        // more argument checking over flags?
         try {
-            out = Integer.parseInt(s);
+            clientPort = Integer.parseInt(args[1]);
+            IPAddr = InetAddress.getByName(args[3]);
+            remotePort = Integer.parseInt(args[5]);
+            filename = args[7];
+            mtu = Integer.parseInt(args[9]);
+            windowSize = Integer.parseInt(args[11]);
         } catch (NumberFormatException e) {
-            throw new RuntimeException("Unable to parse string '" + s + "'");
+            System.err.println("Port / mtu / window size must be an integer.");
+            return;
+        } catch (UnknownHostException e) {
+            System.err.println("IP address must be an integer.");
+            return;
         }
-        return out;
+
+        System.out.println("Running...");
+        Sender s = new Sender(clientPort, IPAddr, remotePort, filename, mtu, windowSize);
     }
 
-    private enum State {
-        RECV,
-        SEND
+    /**
+     * 
+     * @param args
+     */
+    private static void runReceiver(String[] args) {
+
+        if (args.length != 8) {
+            System.err.println("Error: missing or additional arguments");
+            return;
+        }
+
+        int clientPort;     // port client runs on
+        int mtu;            // max transmission unit (in bytes)
+        int windowSize;     // sliding window size (in segments)
+        String filename;    // file to be written to
+
+        try {
+            clientPort = Integer.parseInt(args[1]);
+            mtu = Integer.parseInt(args[3]);
+            windowSize = Integer.parseInt(args[5]);
+            filename = args[7];
+        } catch (NumberFormatException e) {
+            System.err.println("Port / mtu / window size must be an integer");
+            return;
+        }
+        Receiver r = new Receiver(clientPort, mtu, windowSize, filename);
+        
     }
 
-    private static void verifySenderAttributes() {
-        ArrayList<String> missingArgs = new ArrayList<>();
-        if (Objects.isNull(PORT)) {
-            missingArgs.add("PORT");
-        }
-        if (Objects.isNull(REMOTE_PORT)) {
-            missingArgs.add("REMOTE_PORT");
-        }
-        if (Objects.isNull(FILE_NAME)) {
-            missingArgs.add("FILE_NAME");
-        }
-        if (Objects.isNull(MTU)) {
-            missingArgs.add("MTU");
-        }
-        if (Objects.isNull(WIN_SIZE)) {
-            missingArgs.add("WIN_SIZE");
-        }
-
-        if (!missingArgs.isEmpty()) {
-            String msg = "Missing arguments to start Sender: ";
-            msg += String.join(", ", missingArgs);
-            throw new RuntimeException(msg);
-        }
-    }
-
-    private static void verifyReceiverAttributes() {
-        ArrayList<String> missingArgs = new ArrayList<>();
-        if (Objects.isNull(PORT)) {
-            missingArgs.add("PORT");
-        }
-        if (Objects.isNull(MTU)) {
-            missingArgs.add("MTU");
-        }
-        if (Objects.isNull(WIN_SIZE)) {
-            missingArgs.add("WIN_SIZE");
-        }
-        if (Objects.isNull(FILE_NAME)) {
-            missingArgs.add("FILE_NAME");
-        }
-
-        if (!missingArgs.isEmpty()) {
-            String msg = "Missing arguments to start Receiver: ";
-            msg += String.join(", ", missingArgs);
-            throw new RuntimeException(msg);
-        }
-    }
 }
