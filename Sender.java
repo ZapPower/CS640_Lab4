@@ -51,7 +51,7 @@ public class Sender {
     /** Smoothed deviation time */
     private double SDEV;
     /** Queue for datagram packets at sws ~ not yet implemented code needs refactoring to use*/
-    private Queue<DatagramPacket> q = new ArrayDeque<>();
+    private Queue<DatagramPacket> queue = new ArrayDeque<>();
 
     /**
      * Constructor

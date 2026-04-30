@@ -76,7 +76,7 @@ public class Receiver {
         }
         this.filename = filename;
 
-        // est local socket
+        // establish local socket
         try { 
             socket = new DatagramSocket(clientPort); 
         } catch (SocketException e) {
@@ -132,6 +132,8 @@ public class Receiver {
      */
     private void terminateConnection(DatagramPacket packet) {
 
+
+        // 
 
 
         // flush and close outputstram
@@ -211,6 +213,13 @@ public class Receiver {
 
         checksum = Sender.calculateChecksum(ackBuffer);
         ackBuffer.putShort(22, checksum);
+
+        // send data packet to 
+        try {
+            socket.send(new DatagramPacket(ackBuffer.array(), 24, IPAddr, remotePort));
+        } catch (IOException e) {
+            System.err.println("Error sending packet");
+        }
     }
 
     /**
