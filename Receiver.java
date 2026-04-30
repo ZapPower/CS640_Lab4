@@ -1,5 +1,8 @@
 import static java.lang.System.exit;
 
+import java.io.BufferedOutputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -40,6 +43,9 @@ public class Receiver {
     /** port at which remote sender is running */
     private int remotePort;
 
+    /** Buffer writes until connection terminated to write */
+    BufferedOutputStream out;
+
     /** Queue for datagram packets at sws ~ not yet implemented code needs refactoring to use*/
     private Queue<DatagramPacket> q = new ArrayDeque<>();
 
@@ -77,6 +83,12 @@ public class Receiver {
             System.err.println("Error: Failed connection to local port: " + clientPort);
         }
 
+        try { 
+            out = new BufferedOutputStream(new FileOutputStream(filename));
+        } catch (FileNotFoundException e) {
+            System.err.println("Error creating / opening the file to write to");
+            exit(1);
+        }
         // handles packet arrival
         receiver();
     }
@@ -122,6 +134,17 @@ public class Receiver {
 
 
 
+        // flush and close outputstram
+        try {
+            out.flush();
+            out.close();
+        } catch (IOException e) {
+            System.err.println("Error flushing the outputstream");
+            exit(1);
+        } finally {
+            
+        }
+        return;
     }
 
     /**
@@ -134,10 +157,10 @@ public class Receiver {
         ByteBuffer packetBuffer = ByteBuffer.wrap(packet.getData(), 0, packet.getLength());
         int packetSEQ = packetBuffer.getInt(0);
         long timestamp = packetBuffer.getLong(8);
-        int length = packetBuffer.getInt(16) & 0x1FFFFFFF;
-
+        int lenFlags = packetBuffer.getInt(16);
+        int length = lenFlags & 0x1FFFFFFF;
         // discard duplicate packet
-        if (ackNumber < packetSEQ) {
+        if (packetSEQ < ackNumber) {
             return;
         }
         // check checksum, drop packet if mismatch
@@ -149,13 +172,20 @@ public class Receiver {
         }
 
         // initiate connection termination
-        if ((packetBuffer.getInt(16) & FIN) != 0) {
+        if ((lenFlags & FIN) != 0) {
             terminateConnection(packet);
             return;
         }
 
-        // previous checks passed, write data
-
+        // previous checks passed, write data to buffer
+        byte[] data = new byte[length];
+        packetBuffer.position(24);
+        packetBuffer.get(data, 0, length);
+        try {
+            out.write(data);
+        } catch (IOException e) {
+            System.err.println("Error while writing to BufferedOutputStream");
+        }
 
         // send acknowledgement w/ flag
         sendACK(timestamp, ACK);
