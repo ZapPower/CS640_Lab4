@@ -17,9 +17,9 @@ import java.util.Queue;
  */
 public class Receiver {
 
-    private static final int synFlag = 1 << 29;
-    private static final int ackFlag = 1 << 30;
-    private static final int finFlag = 1 << 31;
+    private static final int SYN = 1 << 29;
+    private static final int ACK = 1 << 30;
+    private static final int FIN = 1 << 31;
 
     /** port number at which the client will run */
     private int clientPort;
@@ -29,10 +29,9 @@ public class Receiver {
     private int windowSize;
     /** file to be sent */
     private String filename;
-    /** Sequence Number of last sent byte */
-    private int SEQ;
+    
     /** ACK is next byte expected  */
-    private int ACK;
+    private int ackNumber;
     /** Used to send out and receive packets */
     private DatagramSocket socket;
     
@@ -85,8 +84,8 @@ public class Receiver {
 
     /**
      * Triggered by a SYN flag, establishes a conenction to the remote sender
-     * by recording their IP + port. Also parses the initial basic packet
-     * and sends an acknowledgement.
+     * by saving their IP + port. Also parses the initiator packet
+     * and sends an acknowledgement (with SYN and ACK flags set).
      * @param packet
      */
     private void establishConnection(DatagramPacket packet) {
@@ -96,7 +95,7 @@ public class Receiver {
         short checksum = buf.getShort(22);
         buf.putShort(22, (short)0);
 
-        // check checksum value
+        // recalculate and compare checksum value
         short recalculatedhecksum = Sender.calculateChecksum(buf);
         if (recalculatedhecksum != checksum) {
             System.err.println("Checksum field did not match. Droping packet");
@@ -105,14 +104,23 @@ public class Receiver {
         // set remote IP and Port
         this.IPAddr = packet.getAddress();
         this.remotePort = packet.getPort();
-        this.SEQ = buf.getInt(0);
+        this.ackNumber = 1;
 
+        // send acknowledgement for initiation packet
         long timestamp = buf.getLong(8);
-        sendACK(timestamp);
+        int flags = SYN & ACK;
+        sendACK(timestamp, flags);
+
         return;
     }
 
-    private void terminateConnection() {
+    /**
+     * Triggered by a FIN flag. Only sender can initiate a connection termination.
+     * Sends and ACK of the FIN / SEQ # and then its own packet marked FIN
+     */
+    private void terminateConnection(DatagramPacket packet) {
+
+
 
     }
 
@@ -127,16 +135,30 @@ public class Receiver {
         int packetSEQ = packetBuffer.getInt(0);
         long timestamp = packetBuffer.getLong(8);
         int length = packetBuffer.getInt(16) & 0x1FFFFFFF;
+
+        // discard duplicate packet
+        if (packetSEQ < ackNumber) {
+            return;
+        }
+        // check checksum, drop packet if mismatch
         short checksum = packetBuffer.getShort(22);
+        packetBuffer.putShort(22, (short)0);
+        short recalculatedChecksum = Sender.calculateChecksum(packetBuffer);
+        if (recalculatedChecksum != checksum) {
+            return;
+        }
 
-        // check sequence number for dupliacte
-        // if (this.SEQ < packetSEQ) {}
-        // check checksum
+        // initiate connection termination
+        if ((packetBuffer.getInt(16) & FIN) != 0) {
+            terminateConnection(packet);
+            return;
+        }
 
-        // check flags to call terminate connection?
+        // previous checks passed, write data
 
-        // send acknowledgement
-        sendACK(timestamp);
+
+        // send acknowledgement w/ flag
+        sendACK(timestamp, ACK);
     }
 
     /**
@@ -145,15 +167,15 @@ public class Receiver {
      * ACK flag is not & to a value (length 0).
      * @param timestamp is copied over from incoming packet
      */
-    private void sendACK(long timestamp) {
+    private void sendACK(long timestamp, int flags) {
 
         short checksum = 0;
         ByteBuffer ackBuffer = ByteBuffer.allocate(24);
 
-        ackBuffer.putInt(0);          // don't need to send back a SEQ#
-        ackBuffer.putInt(this.ACK);         // next expected byte
+        ackBuffer.putInt(0);              // don't need to send back a SEQ#
+        ackBuffer.putInt(this.ackNumber);       // next expected byte
         ackBuffer.putLong(timestamp);
-        ackBuffer.putInt(ackFlag);          // length 0
+        ackBuffer.putInt(ACK);                  // length 0
         ackBuffer.putShort((short)0);
         ackBuffer.putShort((short)0);
 
@@ -178,7 +200,7 @@ public class Receiver {
                 packetBuffer = ByteBuffer.wrap(packet.getData());
                 flags = packetBuffer.getInt(16) >>> 29;
                 // initialize socket
-                if ((flags & synFlag) != 0) {
+                if ((flags & SYN) != 0) {
                     establishConnection(packet);
                 }
                 else {
