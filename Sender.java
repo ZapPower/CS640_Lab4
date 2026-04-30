@@ -109,10 +109,14 @@ public class Sender {
         SEQ = 0;
         // ACK = 0;
         T0 = java.util.concurrent.TimeUnit.SECONDS.toNanos(5); // initialized to 5 seconds
+
+        sender();
     }
 
     /**
-     * Establish a connection with a remote host.
+     * Establish a connection with a remote host. Three-way handshake.
+     * Sends connection initiator packet with SYN and SEQ 0. Blocks until 
+     * receives packet, which should be acknowledgment.
      */
     private void establishConnection() {
         
@@ -127,6 +131,21 @@ public class Sender {
         }
         // for new connection "set the sequence number to 0"
         this.SEQ = 0;
+
+
+        // wait for acknowledgment
+        try {
+            socket.receive(packet);
+        } catch(IOException e) {
+            System.err.println("Error waiting for initiator acknowledgment");
+        }
+
+        buf = ByteBuffer.wrap(packet.getData());
+        if (buf.getInt(4) != 0) {System.err.println("Wrong acknowledment number");}
+        if (buf.get)
+
+        // send ACK for Receiver's connection-establishing packet
+
         return;
         
     }
@@ -254,9 +273,17 @@ public class Sender {
     }
 
     /**
-     * Called after packets sent to wait for ACK packet
+     * Loop method, initiated by constructor. Initiates the 
+     * connection establishment sequence and then transitions into
+     * sending / waiting for acknowledgements.
      */
-    public void receiver() {
+    public void sender() {
+
+        // establish connection
+        establishConnection();
+
+        // loop
+
 
     }
 

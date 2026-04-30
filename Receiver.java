@@ -116,7 +116,7 @@ public class Receiver {
         // set remote IP and Port
         this.IPAddr = packet.getAddress();
         this.remotePort = packet.getPort();
-        this.ackNumber = 1;
+        this.ackNumber = 0;
 
         // send acknowledgement for initiation packet
         long timestamp = buf.getLong(8);
@@ -129,6 +129,7 @@ public class Receiver {
     /**
      * Triggered by a FIN flag. Only sender can initiate a connection termination.
      * Sends and ACK of the FIN / SEQ # and then its own packet marked FIN
+     * Four-way handshake
      */
     private void terminateConnection(DatagramPacket packet) {
 
@@ -204,7 +205,7 @@ public class Receiver {
         short checksum = 0;
         ByteBuffer ackBuffer = ByteBuffer.allocate(24);
 
-        ackBuffer.putInt(0);              // don't need to send back a SEQ#
+        ackBuffer.putInt(0);              // don't need to send back SEQ#, 0 for initation
         ackBuffer.putInt(this.ackNumber);       // next expected byte
         ackBuffer.putLong(timestamp);
         ackBuffer.putInt(ACK);                  // length 0
@@ -237,10 +238,14 @@ public class Receiver {
                 socket.receive(packet);
                 // resize packet
                 packetBuffer = ByteBuffer.wrap(packet.getData());
-                flags = packetBuffer.getInt(16) >>> 29;
+                flags = packetBuffer.getInt(16);
                 // initialize socket
                 if ((flags & SYN) != 0) {
                     establishConnection(packet);
+                }
+                // begin termination
+                else if ((flags & FIN) != 0) {
+                    terminateConnection(packet);
                 }
                 else {
                     parsePacket(packet);
